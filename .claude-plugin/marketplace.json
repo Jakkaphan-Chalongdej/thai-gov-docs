@@ -1,5 +1,5 @@
 {
-  "name": "thai-gov-docs-tools",
+  "name": "thai-gov-docs",
   "owner": { "name": "AI Factory" },
   "metadata": {
     "description": "เครื่องมือเขียนเอกสารโครงการซอฟต์แวร์ภาครัฐสำหรับ Claude Code"

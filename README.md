@@ -1,4 +1,4 @@
-# thai-gov-docs-tools: Claude Code marketplace
+# thai-gov-docs: Claude Code marketplace
 
 | plugin | ใช้ทำอะไร |
 |---|---|
@@ -15,16 +15,16 @@ Claude Code ที่เก่ากว่า 2.1.275 ใช้สองบร�
 
 ```
 /plugin marketplace add <REPO>
-/plugin install srs-sds@thai-gov-docs-tools
+/plugin install srs-sds@thai-gov-docs
 ```
 
-`<REPO>` คือ `owner/repo` ถ้าอยู่บน GitHub หรือ URL ของ git เต็ม (เช่น `https://gitlab.example.com/team/srs-sds-marketplace.git`)
+`<REPO>` คือ `owner/repo` ถ้าอยู่บน GitHub หรือ URL ของ git เต็ม (เช่น `https://gitlab.example.com/team/thai-gov-docs.git`)
 สำหรับ GitLab และ git อื่น ถ้า repo เป็น private ต้อง clone ด้วย git ในเครื่องได้ก่อน
 
 รับรุ่นใหม่ได้ด้วย
 
 ```
-/plugin marketplace update thai-gov-docs-tools
+/plugin marketplace update thai-gov-docs
 ```
 
 ถ้าเคยแตก zip ไว้ที่ `~/.claude/skills/srs-sds` ให้ลบโฟลเดอร์นั้นออก ไม่อย่างนั้น skill จะซ้ำกันสองชุด
