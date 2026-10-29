@@ -5,7 +5,7 @@
     python3 setup.py --check   report only
 
 Installs only inside the skill folder or the user's own font folder, never system-wide:
-  python-docx      -> <skill>/.venv (only when the current Python lacks it)
+  python-docx, Pillow -> <skill>/.venv (only when the current Python lacks them)
   mermaid-cli      -> <skill>/.tools (needs Node.js; downloads a headless Chrome once, ~150 MB)
   Sarabun font     -> the user's font folder (only when neither TH Sarabun New nor Sarabun is installed)
 LibreOffice (for PDF) and Node.js cannot be installed from here: the report prints the command for this OS.
@@ -39,7 +39,8 @@ def hint(tool):
 
 
 def has_docx(python):
-    return subprocess.run([python, "-c", "import docx"], capture_output=True).returncode == 0
+    # Pillow draws the highlight boxes on manual screenshots
+    return subprocess.run([python, "-c", "import docx, PIL"], capture_output=True).returncode == 0
 
 
 def setup_docx(check):
@@ -50,11 +51,12 @@ def setup_docx(check):
         return True, "python-docx in " + env.VENV_DIR
     if check:
         return False, "python-docx missing (run setup.py without --check)"
-    print("installing python-docx into", env.VENV_DIR, flush=True)
+    print("installing python-docx and Pillow into", env.VENV_DIR, flush=True)
     try:
         venv.create(env.VENV_DIR, with_pip=True, clear=True)
         py = env.venv_python()
-        subprocess.run([py, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", "python-docx"], check=True)
+        subprocess.run([py, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", "python-docx", "Pillow"],
+                       check=True)
     except (OSError, subprocess.CalledProcessError) as e:
         return False, f"python-docx install failed: {e}"
     return True, "python-docx in " + env.VENV_DIR

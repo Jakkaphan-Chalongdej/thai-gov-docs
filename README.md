@@ -2,20 +2,26 @@
 
 | plugin | ใช้ทำอะไร |
 |---|---|
+| tor | ร่างขอบเขตของงาน (TOR) จัดจ้างระบบสารสนเทศของหน่วยงานรัฐ ตามโครงที่ใช้จริง พร้อมข้อความมาตรฐาน เลขไทย และช่องลงนามคณะกรรมการทุกหน้า ออกเป็น Word และ PDF |
 | srs-sds | เขียน SRS และ/หรือ SDS ภาษาไทยแบบหน่วยงานรัฐจาก TOR: ความต้องการ, เอกสารออกแบบระบบกับ schema และเอกสารส่งมอบตามแบรนด์บริษัท ออกเป็น markdown, Word และ PDF |
+| user-manual | เขียนคู่มือการใช้งานระบบทีละขั้นพร้อมภาพหน้าจอและกรอบเน้นจุดที่ต้องคลิก จาก SRS/SDS ต้นแบบ หรือระบบที่รันอยู่ ออกเป็น Word และ PDF ตามแบรนด์บริษัท |
 
 ## ติดตั้งใน Claude Code
 พิมพ์ใน Claude Code ครั้งเดียว
 
 ```
+/plugin install tor --marketplace Jakkaphan-Chalongdej/thai-gov-docs
 /plugin install srs-sds --marketplace Jakkaphan-Chalongdej/thai-gov-docs
+/plugin install user-manual --marketplace Jakkaphan-Chalongdej/thai-gov-docs
 ```
 
-Claude Code ที่เก่ากว่า 2.1.275 ใช้สองบรรทัดนี้แทน
+Claude Code ที่เก่ากว่า 2.1.275 ใช้บรรทัดเหล่านี้แทน
 
 ```
 /plugin marketplace add Jakkaphan-Chalongdej/thai-gov-docs
+/plugin install tor@thai-gov-docs
 /plugin install srs-sds@thai-gov-docs
+/plugin install user-manual@thai-gov-docs
 ```
 
 รับรุ่นใหม่ได้ด้วย
@@ -36,7 +42,7 @@ plugin marketplace ใช้ได้เฉพาะ Claude Code บน claude.a
 scripts/build-zip.sh
 ```
 
-แล้วอัปโหลด `dist/srs-sds.zip` ที่ Settings → Capabilities → Skills (ต้องเปิด code execution) หรือให้ admin ของแผน Team/Enterprise
+แล้วอัปโหลด `dist/<skill>.zip` (เช่น `dist/tor.zip`, `dist/srs-sds.zip`, `dist/user-manual.zip`) ที่ Settings → Capabilities → Skills (ต้องเปิด code execution) หรือให้ admin ของแผน Team/Enterprise
 อัปโหลดให้ทั้งองค์กร บน claude.ai แผนภาพอาจยังเป็นข้อความ เพราะ sandbox ดาวน์โหลด Chrome ของ mermaid-cli ไม่ได้
 
 ## โครงสร้าง

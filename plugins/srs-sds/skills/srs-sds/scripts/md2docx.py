@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Converts an SRS/SDS markdown file from this skill into a Word file (and optionally PDF).
+"""Converts a markdown document of these skills (TOR, SRS/SDS, user manual) into a Word file (and optionally PDF).
 
     python3 md2docx.py srs-doc.md                 -> srs-doc.docx          (Windows: py md2docx.py ...)
     python3 md2docx.py srs-doc.md --pdf           -> srs-doc.docx + srs-doc.pdf (needs LibreOffice)
@@ -16,6 +16,22 @@ company, company_en, address, contact, logo, header_logo, client_logo, title, ti
 client, doc_code, version, date, classification, author, revision, note, and repeated
 "ref: code | name | version | date" lines. "brand: <name>" fills in the keys the document leaves out from
 brands/<name>/brand.yaml (company details, logo, colours); the document's own keys win.
+
+"cover: manual" makes a user-manual front instead: a bordered cover with the logo, title, system name
+(system, system_en) and "จัดทำโดย" (prepared_by), then the contents; the header shows the system name, chapters
+are coloured bars starting a new page, screenshots get a frame and captions are not numbered. Each of these can
+be set on its own: header_text, footer_left, page_total (yes/no), chapter_style (bar/plain), figure_label
+(a word, or none), image_border (yes/no).
+
+"cover: tor" makes the first page of a TOR: the agency seal (logo), a centred title block (title, project,
+"สำหรับ" client, fiscal_year) over a dashed rule, the body starting on the same page; page numbers top centre
+from page 2, and a footer with the drafting committee's signature lines on every page (repeated
+"committee: name | position" lines). "toc: yes" adds a contents page; "thai_digits: yes" writes the body's
+numbers in Thai digits (๑๒๓), leaving words with Latin letters (model names, URLs) as they are.
+
+An image line may end in boxes to draw on the picture, e.g. ![หน้าจอเข้าสู่ระบบ](screens/login.png){box=820,410,160,48}
+(x,y,width,height in the image's pixels, or with % of its size; several boxes separated by ";"), and
+"crop=x,y,w,h" (same units) to print only that part, so a small popup is readable. Needs Pillow.
 
 Run setup.py once first: it installs python-docx, mermaid-cli and the Sarabun font where missing. Without
 mermaid-cli a diagram is kept as text with a note; without LibreOffice there is no PDF.
@@ -51,9 +67,13 @@ HEADING_SIZES = {1: 2, 2: 0, 3: 0, 4: 0}  # points added to a 16 pt body, scaled
 NAVY, GREY = "1F3864", "D9D9D9"  # default front-page table headers / body table headers
 BLANK = "..................................."
 LOGO_KEYS = ("logo", "header_logo", "client_logo")
+MANUAL = {"footer_left": "คู่มือการใช้งาน (User Manual)", "page_total": "no", "chapter_style": "bar",
+          "figure_label": "none", "image_border": "yes"}  # defaults that "cover: manual" brings
 TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
 TABLE_SEP = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")
-IMAGE = re.compile(r"^!\[(.*?)\]\((.+?)\)\s*$")
+IMAGE = re.compile(r"^!\[(.*?)\]\((.+?)\)\s*(?:\{(.*?)\})?\s*$")
+# a numbered clause or step ("6.9.1.1 …", "๒.๑ …", "1) …") starts its own paragraph
+ITEM = re.compile(r"^(?:[0-9๐-๙]+\.)+[0-9๐-๙]*\s|^[0-9๐-๙]+\)\s")
 PLACEHOLDER = re.compile(r"^\[ภาพหน้าจอ:\s*(.+?)\]\s*$")
 
 
@@ -176,8 +196,8 @@ def parse_keys(lines, meta):
     """Reads "key: value" lines (# starts a comment) into meta; repeated "ref:" lines collect as rows."""
     for line in lines:
         m = re.match(r"^\s*([a-z_]+)\s*:\s*(.*?)\s*(#.*)?$", line)
-        if m and m.group(1) == "ref":
-            meta.setdefault("ref", []).append([c.strip() for c in m.group(2).split("|")])
+        if m and m.group(1) in ("ref", "committee"):
+            meta.setdefault(m.group(1), []).append([c.strip() for c in m.group(2).split("|")])
         elif m:
             meta[m.group(1)] = m.group(2).strip().strip('"')
     return meta
@@ -217,6 +237,67 @@ def read_front_matter(lines, base_dir):
             print(f"{key} not found: {meta[key]} (left out)", file=sys.stderr)
             del meta[key]
     return meta, lines[n + 1:]
+
+
+def draw_boxes(path, spec, out):
+    """Copies the image to out with red rectangles from "box=x,y,w,h; box=..." and cut to "crop=x,y,w,h"
+    (pixels of the original, or % of its size). Returns out, or path unchanged when Pillow is missing or the
+    spec does not parse."""
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        print(f"boxes not drawn on {os.path.basename(path)}: Pillow missing (run scripts/setup.py)", file=sys.stderr)
+        return path
+    boxes, crop = [], None
+    for part in re.split(r"[;]", spec):
+        m = re.match(r"^\s*(box|กรอบ|crop)\s*=\s*(.+?)\s*$", part)
+        if not m:
+            continue
+        nums = [n.strip() for n in m.group(2).split(",")]
+        if len(nums) != 4:
+            print(f"{m.group(1)} ignored (needs x,y,w,h): {part.strip()}", file=sys.stderr)
+            continue
+        if m.group(1) == "crop":
+            crop = nums
+        else:
+            boxes.append(nums)
+    if not boxes and not crop:
+        return path
+    im = Image.open(path).convert("RGB")
+
+    def rect(nums):
+        return [float(n.rstrip("%")) * (im.width if i % 2 == 0 else im.height) / 100 if n.endswith("%")
+                else float(n) for i, n in enumerate(nums)]
+
+    draw = ImageDraw.Draw(im)
+    width = max(3, im.width // 300)
+    if crop:
+        width = max(3, int(rect(crop)[2]) // 300)
+    for nums in boxes:
+        x, y, w, h = rect(nums)
+        pad = width * 2  # clear of the control it marks
+        draw.rectangle([x - pad, y - pad, x + w + pad, y + h + pad], outline=(220, 0, 0), width=width)
+    if crop:
+        x, y, w, h = rect(crop)
+        im = im.crop((max(0, int(x)), max(0, int(y)), min(im.width, int(x + w)), min(im.height, int(y + h))))
+    im.save(out)
+    return out
+
+
+THAI_DIGITS = str.maketrans("0123456789", "๐๑๒๓๔๕๖๗๘๙")
+
+
+def thai_digits(text):
+    """Arabic digits to Thai, except in words with Latin letters, paths or URLs (Xeon E5-2690) and in a number
+    right after a Latin word, which belongs to a name (OWASP Top 10, Windows 11, TLS 1.2)."""
+    out, prev = [], ""
+    for part in re.split(r"(\s+)", text):
+        if part.strip() and not re.search(r"[A-Za-z/\\:@_]", part) and not re.search(r"[A-Za-z]$", prev):
+            part = part.translate(THAI_DIGITS)
+        if part.strip():
+            prev = part
+        out.append(part)
+    return "".join(out)
 
 
 def image_size(path):
@@ -273,6 +354,8 @@ class Writer:
         self.font, self.size, self.base = font, size, base_dir
         self.figures = self.tables = 0
         self.primary, self.table_fill = NAVY, GREY
+        self.figure_label, self.image_border = "รูปภาพที่", False
+        self.digits = lambda t: t  # thai_digits when the document asks for Thai digits
         sec = self.doc.sections[0]
         sec.page_width, sec.page_height = Cm(21), Cm(29.7)
         sec.top_margin, sec.bottom_margin = Cm(2.65), Cm(2.29)
@@ -333,8 +416,153 @@ class Writer:
         last.add_run()._element.append(end)
 
     def front_pages(self, meta, toc=None):
+        if meta.get("cover") == "tor":
+            return self.tor_front(meta, toc)
+        if meta.get("cover") == "manual":
+            meta = dict(MANUAL, **meta)
         self.primary = meta.get("color_primary", NAVY).lstrip("#")
         self.table_fill = meta.get("color_table", GREY).lstrip("#")
+        self.figure_label = meta.get("figure_label", "รูปภาพที่")
+        self.image_border = meta.get("image_border") == "yes"
+        if meta.get("chapter_style") == "bar":
+            self.chapter_bar()
+            self._bar.set(qn("w:fill"), self.primary)
+        if meta.get("cover") == "manual":
+            self.manual_cover(meta)
+        else:
+            self.full_cover(meta)
+        self.heading(1, "สารบัญ", toc=False)
+        if meta.get("cover") == "manual":
+            p = self.para("หน้า", bold=True, align=WD_ALIGN_PARAGRAPH.RIGHT, space_after=0)
+        self.toc(toc)
+        # ask Word to refresh the table of contents and page counts when the file opens
+        upd = OxmlElement("w:updateFields")
+        upd.set(qn("w:val"), "true")
+        self.doc.settings.element.append(upd)
+
+        body = self.doc.add_section(WD_SECTION.NEW_PAGE)
+        pg = OxmlElement("w:pgNumType")
+        pg.set(qn("w:start"), "1")
+        body._sectPr.append(pg)
+        self.header(self.doc.sections[0], meta)
+        self.footer(body, meta)
+
+    def tor_front(self, meta, toc):
+        """A TOR's first page: seal and title block, body on the same page; page numbers at the top from page 2
+        and the drafting committee's signature lines in every footer."""
+        thai = meta.get("thai_digits") == "yes"
+        conv = thai_digits if thai else (lambda t: t)
+        self.digits = conv
+        self.figure_label = meta.get("figure_label", "รูปที่")
+        center = WD_ALIGN_PARAGRAPH.CENTER
+        if meta.get("logo"):
+            p = self.doc.add_paragraph()
+            p.alignment = center
+            self.logo(p, meta["logo"], 3, 3)
+        lines = [meta.get("title", "(ร่าง) ขอบเขตของงาน (Terms of Reference: TOR)"), meta.get("project"),
+                 "สำหรับ" + meta["client"] if meta.get("client") else None,
+                 "ประจำปีงบประมาณ พ.ศ. " + meta["fiscal_year"] if meta.get("fiscal_year") else None]
+        for text in [t for t in lines if t]:
+            p = self.para(conv(text), bold=True, align=center, space_after=0, scale=1.1)
+        p.paragraph_format.space_after = Pt(6)
+        rule = self.doc.add_paragraph()
+        rule.paragraph_format.space_after = Pt(12)
+        border(rule, "bottom", "000000", 6)
+        rule._p.pPr.find(qn("w:pBdr"))[0].set(qn("w:val"), "dashed")
+        if meta.get("toc") == "yes":
+            self.page_break()
+            self.heading(1, "สารบัญ", toc=False)
+            self.toc(toc)
+            upd = OxmlElement("w:updateFields")
+            upd.set(qn("w:val"), "true")
+            self.doc.settings.element.append(upd)
+            self.page_break()
+        sec = self.doc.sections[0]
+        sec.different_first_page_header_footer = True
+        p = sec.header.paragraphs[0]
+        p.alignment = center
+        dash = meta.get("page_style", "dash" if not thai else "plain") == "dash"
+        if dash:
+            set_font(p.add_run("- "), self.font, self.size)
+        field(p, "PAGE \\* ThaiArabic" if thai else "PAGE", self.font, self.size, shown="๒" if thai else "2")
+        if dash:
+            set_font(p.add_run(" -"), self.font, self.size)
+        for footer in (sec.footer, sec.first_page_footer):
+            self.committee_footer(footer, meta.get("committee", []))
+
+    def committee_footer(self, footer, members):
+        """One signature cell per drafting-committee member, three to a row."""
+        if not members:
+            return
+        width = self.doc.sections[0].page_width - self.doc.sections[0].left_margin - self.doc.sections[0].right_margin
+        cols = min(3, len(members))
+        rows = (len(members) + cols - 1) // cols
+        t = footer.add_table(rows, cols, width)
+        small = self.size * 0.7
+        for n, member in enumerate(members):
+            cell = t.cell(n // cols, n % cols)
+            name, position = (member + [""])[:2]
+            p = cell.paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_after = Pt(0)
+            for i, text in enumerate(("(ลงชื่อ)" + "." * 28, f"({name})" if name else "(" + "." * 28 + ")",
+                                      position)):
+                run = p.add_run(text)
+                set_font(run, self.font, small)
+                if i < 2:
+                    run.add_break()
+
+    def chapter_bar(self):
+        """Level-1 headings as a coloured bar with white text, each chapter on a new page."""
+        style = self.doc.styles["Heading 1"]
+        style.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+        style.paragraph_format.page_break_before = True
+        ppr = style.element.get_or_add_pPr()
+        shd = OxmlElement("w:shd")
+        for k, v in (("val", "clear"), ("color", "auto"), ("fill", "PRIMARY")):
+            shd.set(qn(f"w:{k}"), v)
+        ppr.append(shd)
+        self._bar = shd  # the fill is set once the brand colour is known
+
+    def manual_cover(self, meta):
+        """A bordered first page: logo, title, system name, and who prepared it at the foot."""
+        center = WD_ALIGN_PARAGRAPH.CENTER
+        borders = OxmlElement("w:pgBorders")
+        borders.set(qn("w:display"), "firstPage")
+        borders.set(qn("w:offsetFrom"), "page")
+        for side in ("top", "left", "bottom", "right"):
+            el = OxmlElement(f"w:{side}")
+            for k, v in (("val", "single"), ("sz", "8"), ("space", "24"), ("color", "auto")):
+                el.set(qn(f"w:{k}"), v)
+            borders.append(el)
+        sect = self.doc.sections[0]._sectPr
+        sect.insert(sect.index(sect.find(qn("w:pgMar"))) + 1, borders)
+        p = self.doc.add_paragraph()
+        p.alignment = center
+        p.paragraph_format.space_before = Pt(110)
+        p.paragraph_format.space_after = Pt(40)
+        if meta.get("client_logo"):
+            self.logo(p, meta.get("logo"), 5, 3)
+            p.add_run("\u2003\u2003")
+            self.logo(p, meta["client_logo"], 5, 3)
+        else:
+            self.logo(p, meta.get("logo"), 7, 3)
+        self.para(meta.get("title", "คู่มือการใช้งาน (User Manual)"), bold=True, align=center, space_after=12,
+                  scale=1.3)
+        for key in ("system", "system_en"):
+            if meta.get(key):
+                self.para(meta[key], bold=True, align=center, space_after=6, scale=1.2)
+        if meta.get("version") or meta.get("date"):
+            text = "  ".join(x for x in (f"Version {meta['version']}" if meta.get("version") else "",
+                                          meta.get("date", "")) if x)
+            self.para(text, align=center, space_after=0)
+        p = self.para("จัดทำโดย", bold=True, align=center, space_after=4, scale=1.1)
+        p.paragraph_format.space_before = Pt(150)
+        self.para(meta.get("prepared_by") or meta.get("company", ""), bold=True, align=center, space_after=0,
+                  scale=1.1)
+        self.page_break()
+
+    def full_cover(self, meta):
         center = WD_ALIGN_PARAGRAPH.CENTER
         p = self.doc.add_paragraph()
         p.alignment = center
@@ -385,34 +613,47 @@ class Writer:
             self.para("หมายเหตุ: " + meta["note"])
         self.page_break()
 
-        self.heading(1, "สารบัญ", toc=False)
-        self.toc(toc)
-        # ask Word to refresh the table of contents and page counts when the file opens
-        upd = OxmlElement("w:updateFields")
-        upd.set(qn("w:val"), "true")
-        self.doc.settings.element.append(upd)
-
-        body = self.doc.add_section(WD_SECTION.NEW_PAGE)
-        pg = OxmlElement("w:pgNumType")
-        pg.set(qn("w:start"), "1")
-        body._sectPr.append(pg)
-        self.header(self.doc.sections[0], meta)
-        self.footer(body, meta)
-
     def header(self, sec, meta):
-        """Logo, company name and document code over a navy rule; the body section inherits it."""
+        """Logo, company (or system) name and document code over a rule; the body section inherits it."""
+        if meta.get("cover") == "manual":
+            # the manual's cover page carries no header
+            sec.different_first_page_header_footer = True
         p = sec.header.paragraphs[0]
         right_tab(p, sec)
         small = self.size * 0.7
-        if self.logo(p, meta.get("header_logo") or meta.get("logo"), 4, 1):
-            set_font(p.add_run("  "), self.font, small)
-        run = p.add_run(meta.get("company_en") or meta.get("company", ""))
-        set_font(run, self.font, small, True)
-        run.font.color.rgb = RGBColor.from_string(self.primary)
-        version = meta.get("version", "1.0")
-        run = p.add_run(f"\t{meta.get('doc_code', '')}  Version {version}")
-        set_font(run, self.font, small)
-        run.font.color.rgb = RGBColor.from_string("666666")
+        logo = meta.get("header_logo") or meta.get("logo")
+        if meta.get("header_text"):
+            lines = [meta["header_text"]]
+        elif meta.get("cover") == "manual":
+            lines = [x for x in (meta.get("system"), meta.get("system_en")) if x]
+        else:
+            lines = [meta.get("company_en") or meta.get("company", "")]
+        if len(lines) > 1:
+            # logo beside a block of lines: a borderless two-cell table keeps the lines next to the logo
+            t = sec.header.add_table(1, 2, sec.page_width - sec.left_margin - sec.right_margin)
+            t.autofit = False
+            for cell, w in zip(t.rows[0].cells, (4.3, 12.4)):
+                cell.width = Cm(w)
+            logo_par, p_text = t.cell(0, 0).paragraphs[0], t.cell(0, 1).paragraphs[0]
+            self.logo(logo_par, logo, 4, 1)
+            t.cell(0, 1).vertical_alignment = 1  # centre
+            sec.header._element.remove(t._tbl)
+            p._p.addprevious(t._tbl)
+            target = p_text
+        else:
+            if self.logo(p, logo, 4, 1):
+                set_font(p.add_run("  "), self.font, small)
+            target = p
+        for n, text in enumerate(lines):
+            run = target.add_run(text)
+            set_font(run, self.font, small, n == 0)
+            run.font.color.rgb = RGBColor.from_string(self.primary)
+            if n < len(lines) - 1:
+                run.add_break()
+        if meta.get("doc_code"):
+            run = p.add_run(f"\t{meta['doc_code']}  Version {meta.get('version', '1.0')}")
+            set_font(run, self.font, small)
+            run.font.color.rgb = RGBColor.from_string("666666")
         border(p, "bottom", self.primary)
 
     def footer(self, sec, meta):
@@ -420,14 +661,17 @@ class Writer:
         p = sec.footer.paragraphs[0]
         right_tab(p, sec)
         small, grey = self.size * 0.75, "888888"
-        run = p.add_run("ชั้นความลับ: " + meta.get("classification", "ใช้ภายในโครงการ (Project Internal Use)") + "\tหน้า ")
+        left = meta.get("footer_left") or "ชั้นความลับ: " + meta.get("classification",
+                                                                      "ใช้ภายในโครงการ (Project Internal Use)")
+        run = p.add_run(left + "\tหน้า ")
         set_font(run, self.font, small)
         run.font.color.rgb = RGBColor.from_string(grey)
         field(p, "PAGE", self.font, small, color=grey)
-        run = p.add_run(" จาก ")
-        set_font(run, self.font, small)
-        run.font.color.rgb = RGBColor.from_string(grey)
-        field(p, "SECTIONPAGES", self.font, small, color=grey)
+        if meta.get("page_total", "yes") != "no":
+            run = p.add_run(" จาก ")
+            set_font(run, self.font, small)
+            run.font.color.rgb = RGBColor.from_string(grey)
+            field(p, "SECTIONPAGES", self.font, small, color=grey)
         border(p, "top", "BFBFBF", 4)
 
     def plain_footer(self):
@@ -506,16 +750,26 @@ class Writer:
                             run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
         self.doc.add_paragraph().paragraph_format.space_after = Pt(0)
 
-    def image(self, path):
+    def image(self, path, framed=False):
         p = self.doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.keep_with_next = True
-        # fit 15 x 20 cm so a tall diagram (an ER chart) stays on one page
+        # fit 15 x 20 cm so a tall diagram (an ER chart) stays on one page; a small dialog is not blown up
         size = image_size(path)
         if size and size[1] * 15 > size[0] * 20:
-            p.add_run().add_picture(path, height=Cm(20))
+            pic = p.add_run().add_picture(path, height=Cm(min(20, size[1] / 60)))
         else:
-            p.add_run().add_picture(path, width=Cm(15))
+            pic = p.add_run().add_picture(path, width=Cm(min(15, size[0] / 60) if size else 15))
+        if framed and self.image_border:
+            # a thin dark frame, as screenshots in Thai manuals usually have
+            ln = OxmlElement("a:ln")
+            ln.set("w", "12700")
+            fill = OxmlElement("a:solidFill")
+            clr = OxmlElement("a:srgbClr")
+            clr.set("val", "404040")
+            fill.append(clr)
+            ln.append(fill)
+            pic._inline.graphic.graphicData.pic.spPr.append(ln)
 
     def placeholder(self, name):
         t = self.doc.add_table(rows=1, cols=1)
@@ -540,17 +794,31 @@ class Writer:
 
     def figure_caption(self, text):
         self.figures += 1
-        self.para(f"รูปภาพที่ {self.figures} {text}", bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=8)
+        if self.figure_label == "none":
+            self.para(text, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=8)
+        else:
+            self.para(self.digits(f"{self.figure_label} {self.figures} {text}"), bold=True,
+                      align=WD_ALIGN_PARAGRAPH.CENTER, space_after=8)
 
     def table_caption(self, text):
         self.tables += 1
-        p = self.para(f"ตารางที่ {self.tables} {text}", bold=True, space_after=2)
+        if self.doc.paragraphs:
+            # the sentence that introduces the table stays on its page
+            self.doc.paragraphs[-1].paragraph_format.keep_with_next = True
+        p = self.para(self.digits(f"ตารางที่ {self.tables} {text}"), bold=True, space_after=2)
         p.paragraph_format.keep_with_next = True
 
 
 def convert(md_path, out_path, font, size):
     with open(md_path, encoding="utf-8") as f:
         meta, lines = read_front_matter(f.read().splitlines(), os.path.dirname(os.path.abspath(md_path)))
+    if meta.get("thai_digits") == "yes":
+        in_code = False
+        for n, line in enumerate(lines):
+            if line.strip().startswith("```"):
+                in_code = not in_code
+            elif not in_code and not IMAGE.match(line.strip()):
+                lines[n] = thai_digits(line)
     w = Writer(font, size, os.path.dirname(os.path.abspath(md_path)))
     if meta:
         headings = [re.match(r"^(#{1,2})\s+(.*)$", ln.strip()) for ln in lines]
@@ -602,13 +870,18 @@ def convert(md_path, out_path, font, size):
             w.bullet(s[2:])
             i += 1
             continue
+        if (IMAGE.match(s) or PLACEHOLDER.match(s)) and w.doc.paragraphs:
+            # the step that introduces a screenshot stays on the same page as it
+            w.doc.paragraphs[-1].paragraph_format.keep_with_next = True
         m = IMAGE.match(s)
         if m:
             path = m.group(2)
             if not os.path.isabs(path):
                 path = os.path.join(w.base, path)
             if os.path.exists(path):
-                w.image(path)
+                if m.group(3):
+                    path = draw_boxes(path, m.group(3), os.path.join(workdir, f"box{i}.png"))
+                w.image(path, framed=True)
             else:
                 w.placeholder(m.group(1) or os.path.basename(path))
             i += 1
@@ -632,7 +905,7 @@ def convert(md_path, out_path, font, size):
         while i < len(lines):
             n = lines[i].strip()
             if (not n or n.startswith(("#", "- ", "```", "ภาพ:", "ตาราง:", "![", "[ภาพหน้าจอ:"))
-                    or TABLE_ROW.match(n)):
+                    or TABLE_ROW.match(n) or ITEM.match(n)):
                 break
             text.append(n)
             i += 1
@@ -665,12 +938,27 @@ Sub ExportPdf(src As String, dst As String)
     doc.getTextFields().refresh()
   Next k
   SetPageTotals(doc)
+  ArabicPageNumbers(doc)
   Dim out(0) As New com.sun.star.beans.PropertyValue
   out(0).Name = &quot;FilterName&quot;
   out(0).Value = &quot;writer_pdf_Export&quot;
   doc.storeToURL(ConvertToURL(dst), out())
   doc.close(True)
   StarDesktop.terminate()
+End Sub
+
+Rem LibreOffice reads Word&apos;s ThaiArabic page-number switch as Thai letters (ก ข ค) and has no Thai-digit page numbers:
+Rem print plain digits instead (Word itself shows ๑ ๒ ๓)
+Sub ArabicPageNumbers(doc)
+  en = doc.getTextFields().createEnumeration()
+  Do While en.hasMoreElements()
+    tf = en.nextElement()
+    If tf.supportsService(&quot;com.sun.star.text.TextField.PageNumber&quot;) Then
+      Rem 4 = ARABIC; these documents use no other page-number style
+      If tf.NumberingType &lt;&gt; 4 Then tf.NumberingType = 4
+    End If
+  Loop
+  doc.getTextFields().refresh()
 End Sub
 
 Rem LibreOffice keeps Word&apos;s SECTIONPAGES as an unknown field showing its cached value; write in the body

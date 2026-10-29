@@ -1,0 +1,11 @@
+# Contumelia X: company details and look for every document made with "brand: contumeliax".
+# A document's own front matter overrides any of these keys.
+company: บริษัท คอนทูเมเลีย เอ็กซ์ จำกัด
+company_en: CONTUMELIA X CO., LTD.
+address: 256/6 ซ.อ่อนนุช 46 แขวงอ่อนนุช เขตสวนหลวง กรุงเทพมหานคร 10250
+contact: โทร. (+66) 850821585  |  contact@contumelia-x.com  |  www.contumelia-x.com
+logo: logo.png
+classification: ใช้ภายในโครงการ (Project Internal Use)
+layout: contumeliax
+color_primary: 1F3864
+color_table: D9D9D9
