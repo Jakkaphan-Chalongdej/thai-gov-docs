@@ -8,6 +8,12 @@
 พิมพ์ใน Claude Code ครั้งเดียว
 
 ```
+/plugin install srs-sds --marketplace <REPO>
+```
+
+Claude Code ที่เก่ากว่า 2.1.275 ใช้สองบรรทัดนี้แทน
+
+```
 /plugin marketplace add <REPO>
 /plugin install srs-sds@thai-gov-docs-tools
 ```
