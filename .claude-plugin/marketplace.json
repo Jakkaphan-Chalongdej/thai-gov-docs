@@ -1,0 +1,15 @@
+{
+  "name": "thai-gov-docs-tools",
+  "owner": { "name": "AI Factory" },
+  "metadata": {
+    "description": "เครื่องมือเขียนเอกสารโครงการซอฟต์แวร์ภาครัฐสำหรับ Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "srs-sds",
+      "source": "./plugins/srs-sds",
+      "description": "เขียน SRS และ SDS ภาษาไทยแบบหน่วยงานรัฐจาก TOR ออกเป็น markdown, Word และ PDF",
+      "version": "1.0.0"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "srs-sds",
+  "version": "1.0.0",
+  "description": "เขียน SRS และ SDS ภาษาไทยแบบหน่วยงานรัฐจาก TOR: ความต้องการ, เอกสารออกแบบระบบกับ schema และเอกสารส่งมอบ ออกเป็น markdown, Word และ PDF",
+  "author": { "name": "AI Factory" },
+  "keywords": ["srs", "sds", "tor", "thai", "government", "docx"]
+}
