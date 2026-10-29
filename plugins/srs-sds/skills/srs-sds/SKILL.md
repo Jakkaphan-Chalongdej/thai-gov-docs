@@ -1,6 +1,6 @@
 ---
 name: srs-sds
-description: เขียนเอกสาร SRS และ SDS ภาษาไทยแบบหน่วยงานรัฐจาก TOR หรือบรีฟ ได้แก่ ความต้องการพร้อม acceptance criteria, เอกสารออกแบบระบบกับ schema PostgreSQL และเอกสารส่งมอบ SRS/SDS (ตารางสืบย้อน TOR→URS→SRS→FR, use case, หน้าจอ, พจนานุกรมข้อมูล, แผนภาพ mermaid) ใช้เมื่อผู้ใช้ขอ SRS, SDS, เอกสารความต้องการ, เอกสารออกแบบระบบ, ตารางสืบย้อน TOR หรือเอกสารส่งมอบให้คณะกรรมการตรวจรับ
+description: เขียนเอกสาร SRS และ SDS ภาษาไทยแบบหน่วยงานรัฐจาก TOR หรือบรีฟ ได้แก่ ความต้องการพร้อม acceptance criteria, เอกสารออกแบบระบบกับ schema PostgreSQL และเอกสารส่งมอบ SRS/SDD แบบผู้รับจ้าง (ปกบริษัท ประวัติการแก้ไข ตารางอนุมัติ สารบัญ, FR/NFR แยกโมดูลอ้างอิงข้อ TOR, ตารางสิทธิ์ตามบทบาท, ADR, มุมมองสถาปัตยกรรม, หน้าจอ, ตารางข้อมูล, API, ความปลอดภัย, ตารางสอบทานย้อนกลับ) ออกเป็น Word/PDF ใช้เมื่อผู้ใช้ขอ SRS, SDS, SDD, เอกสารความต้องการ, เอกสารออกแบบระบบ, ตารางสืบย้อน TOR หรือเอกสารส่งมอบให้คณะกรรมการตรวจรับ
 ---
 # SRS / SDS for Thai government software projects
 
@@ -38,11 +38,14 @@ a table and an API row.
 ## Step C: Hand-in documents for the committee
 Follow [references/handover.md](references/handover.md), then read the style examples before writing:
 [references/examples-srs.md](references/examples-srs.md) and [references/examples-sds.md](references/examples-sds.md).
-Build the facts list first (TOR items, FR ids, roles, screens and their fields, tables and their columns) from the
-files of steps A–B, and use those names exactly in both documents.
+Build the facts list first (TOR items, U-/M/FR-/NFR-/SCR-/TBL-/API-/ADR- codes, screens and their fields, tables and
+their columns) from the files of steps A–B, and use those names exactly in both documents. Ask the user once for
+the cover details the sources lack (company, address, logo, contract number, author) and put them in each file's
+front matter; leave out what they do not know.
 
 ## Final check (every job)
 - Every TOR item / brief line maps to at least one FR; every FR id cited later exists in the SRS.
+- Every code (U-, M, FR-, NFR-, SCR-, TBL-, API-, ADR-, DC-) cited anywhere is defined once.
 - Role names, screen names, table and column names are spelled the same in every file.
 - Nothing invented: open questions are listed in the SRS and in your reply.
 - Mermaid blocks parse (node ids in English letters, Thai only inside quotes).
@@ -63,10 +66,13 @@ bundled scripts. `<skill-dir>` is this skill's folder; on Windows use `py` inste
    ```
    python3 <skill-dir>/scripts/md2docx.py srs-doc.md --pdf
    ```
-   It writes `srs-doc.docx` (A4, page numbers, numbered ภาพที่/ตารางที่ captions, mermaid rendered to images) and,
-   with `--pdf`, `srs-doc.pdf` through LibreOffice. Font: TH Sarabun New 16 when installed, else Sarabun 11 (same
-   look); `--font "TH SarabunPSK"` switches it. Report what its stderr says was missing (a diagram left as text, no
-   PDF) instead of hiding it.
+   It writes `srs-doc.docx` (A4, numbered รูปภาพที่/ตารางที่ captions, mermaid rendered to images) and, with
+   `--pdf`, `srs-doc.pdf` through LibreOffice with the table of contents filled in. A front matter block gives the
+   cover, revision/approval/reference tables, contents, the header (logo, company, document code) and the footer
+   (classification, "หน้า X จาก Y"); see handover.md section 2. Font: TH Sarabun New 16 when installed, else
+   Sarabun 11 (same look); `--font "TH SarabunPSK"` switches it. Report what its stderr says was missing (a diagram
+   left as text, an empty table of contents, no PDF) instead of hiding it. Word asks to update fields when the
+   .docx opens: answering yes fills in the contents page numbers.
 
 Screenshots: put PNGs in `screens/` and reference them as `![ชื่อหน้าจอ](screens/x.png)`; `[ภาพหน้าจอ: …]` lines
-become grey boxes to paste into later.
+become grey boxes to paste into later. The company logo goes next to the markdown files (`logo: logo.png`).
