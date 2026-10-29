@@ -2,7 +2,7 @@
 
 | plugin | ใช้ทำอะไร |
 |---|---|
-| srs-sds | เขียน SRS และ SDS ภาษาไทยแบบหน่วยงานรัฐจาก TOR: ความต้องการ, เอกสารออกแบบระบบกับ schema และเอกสารส่งมอบ ออกเป็น markdown, Word และ PDF |
+| srs-sds | เขียน SRS และ/หรือ SDS ภาษาไทยแบบหน่วยงานรัฐจาก TOR: ความต้องการ, เอกสารออกแบบระบบกับ schema และเอกสารส่งมอบตามแบรนด์บริษัท ออกเป็น markdown, Word และ PDF |
 
 ## ติดตั้งใน Claude Code
 พิมพ์ใน Claude Code ครั้งเดียว
@@ -39,7 +39,30 @@ scripts/build-zip.sh
 แล้วอัปโหลด `dist/srs-sds.zip` ที่ Settings → Capabilities → Skills (ต้องเปิด code execution) หรือให้ admin ของแผน Team/Enterprise
 อัปโหลดให้ทั้งองค์กร บน claude.ai แผนภาพอาจยังเป็นข้อความ เพราะ sandbox ดาวน์โหลด Chrome ของ mermaid-cli ไม่ได้
 
+## โครงสร้าง
+```
+shared/                    ต้นฉบับที่ทุก skill ใช้ร่วม (แก้ที่นี่ที่เดียว)
+  scripts/                 md2docx.py (markdown → Word/PDF), setup.py, env.py
+  fonts/                   Sarabun (OFL)
+  brands/<บริษัท>/         brand.yaml (ชื่อ ที่อยู่ ติดต่อ สี layout) + logo.png
+plugins/<plugin>/skills/<skill>/
+  SKILL.md, references/    ขั้นตอนของเอกสารชนิดนั้น
+  layouts/<layout>/        โครงบทและตัวอย่างสำนวนของแต่ละแบบ
+  scripts/ fonts/ brands/  สำเนาจาก shared/ (สร้างด้วย sync-shared.sh ห้ามแก้ตรงนี้)
+scripts/sync-shared.sh     คัดลอก shared/ เข้าทุก skill (--check ตรวจว่าตรงกัน)
+scripts/build-zip.sh       sync แล้วสร้าง dist/<skill>.zip
+```
+แต่ละ skill ต้องมีสำเนาของตัวเอง เพราะการติดตั้ง plugin และ zip บน claude.ai ใช้เฉพาะโฟลเดอร์ของ skill นั้น
+
+### เพิ่มบริษัท (แบรนด์)
+สร้าง `shared/brands/<ชื่อ>/` ที่มี `brand.yaml` (คัดลอกจาก contumeliax แล้วแก้) และ `logo.png`
+จากนั้นรัน `scripts/sync-shared.sh` เอกสารที่ใส่ `brand: <ชื่อ>` จะใช้ปก หัวกระดาษ และโลโก้ของบริษัทนั้น
+
+### เพิ่มแบบเอกสาร (layout)
+คัดลอก `plugins/srs-sds/skills/srs-sds/layouts/contumeliax/` เป็นชื่อใหม่ แก้โครงบทและตัวอย่าง แล้วตั้ง
+`layout: <ชื่อ>` ใน brand.yaml ของบริษัทที่ใช้แบบนั้น
+
 ## ออกรุ่นใหม่
-1. แก้ไฟล์ใน `plugins/srs-sds/skills/srs-sds/`
-2. เพิ่ม `version` ใน `plugins/srs-sds/.claude-plugin/plugin.json` และใน `.claude-plugin/marketplace.json` ให้ตรงกัน
-3. `claude plugin validate .` แล้ว commit และ push
+1. แก้ไฟล์ใน `shared/` หรือใน skill (ยกเว้นโฟลเดอร์สำเนา scripts/ fonts/ brands/) แล้วรัน `scripts/sync-shared.sh`
+2. เพิ่ม `version` ใน `plugins/<plugin>/.claude-plugin/plugin.json` และใน `.claude-plugin/marketplace.json` ให้ตรงกัน
+3. `scripts/sync-shared.sh --check` และ `claude plugin validate .` แล้ว commit และ push

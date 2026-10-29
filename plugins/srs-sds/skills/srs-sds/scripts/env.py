@@ -7,6 +7,7 @@ import tempfile
 
 SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FONTS_DIR = os.path.join(SKILL_DIR, "fonts")
+BRANDS_DIR = os.path.join(SKILL_DIR, "brands")  # one folder per company: brand.yaml + logo
 VENV_DIR = os.path.join(SKILL_DIR, ".venv")
 TOOLS_DIR = os.path.join(SKILL_DIR, ".tools")  # npm --prefix for mermaid-cli
 WINDOWS = sys.platform == "win32"

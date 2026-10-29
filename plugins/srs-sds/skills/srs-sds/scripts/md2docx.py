@@ -11,9 +11,11 @@ Understands the skill's restricted markdown: # to #### headings, "- " lists, pip
 
 A front matter block (--- key: value --- at the top) adds the hand-in front pages: a cover with the company
 logo and a project table, revision history, approval and reference tables, a table of contents, a header with
-the logo, company and document code, and a footer with the classification and "หน้า X จาก Y". Keys: company,
-company_en, address, contact, logo, title, title_en, project, contract, client, doc_code, version, date,
-classification, author, revision, note, and repeated "ref: code | name | version | date" lines.
+the logo, company and document code, and a footer with the classification and "หน้า X จาก Y". Keys: brand,
+company, company_en, address, contact, logo, header_logo, client_logo, title, title_en, project, contract,
+client, doc_code, version, date, classification, author, revision, note, and repeated
+"ref: code | name | version | date" lines. "brand: <name>" fills in the keys the document leaves out from
+brands/<name>/brand.yaml (company details, logo, colours); the document's own keys win.
 
 Run setup.py once first: it installs python-docx, mermaid-cli and the Sarabun font where missing. Without
 mermaid-cli a diagram is kept as text with a note; without LibreOffice there is no PDF.
@@ -22,7 +24,6 @@ import argparse
 import os
 import re
 import shutil
-import struct
 import subprocess
 import sys
 import tempfile
@@ -37,6 +38,7 @@ try:
     from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_TAB_ALIGNMENT, WD_TAB_LEADER
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
+    from docx.image.image import Image as DocxImage
     from docx.shared import Cm, Pt, RGBColor, Twips
 except ImportError:
     # setup.py puts python-docx in the skill's own venv when the system Python lacks it
@@ -46,10 +48,9 @@ except ImportError:
     sys.exit("python-docx is missing: run scripts/setup.py (or pip install python-docx)")
 
 HEADING_SIZES = {1: 2, 2: 0, 3: 0, 4: 0}  # points added to a 16 pt body, scaled with the body size
-NAVY, GREY = "1F3864", "D9D9D9"  # front-page table headers / body table headers
+NAVY, GREY = "1F3864", "D9D9D9"  # default front-page table headers / body table headers
 BLANK = "..................................."
-FRONT_KEYS = ("company", "company_en", "address", "contact", "logo", "title", "title_en", "project", "contract",
-              "client", "doc_code", "version", "date", "classification", "author", "revision", "note", "ref")
+LOGO_KEYS = ("logo", "header_logo", "client_logo")
 TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
 TABLE_SEP = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")
 IMAGE = re.compile(r"^!\[(.*?)\]\((.+?)\)\s*$")
@@ -171,29 +172,60 @@ def style_font(style, font, size, bold, color="000000"):
             rpr.remove(el)
 
 
-def read_front_matter(lines):
-    """Returns ({key: value, "ref": [rows]}, remaining lines) for a leading --- block."""
-    if not lines or lines[0].strip() != "---":
-        return {}, lines
-    meta = {"ref": []}
-    for n, line in enumerate(lines[1:], 1):
-        if line.strip() == "---":
-            return meta, lines[n + 1:]
-        m = re.match(r"^\s*([a-z_]+)\s*:\s*(.*)$", line)
+def parse_keys(lines, meta):
+    """Reads "key: value" lines (# starts a comment) into meta; repeated "ref:" lines collect as rows."""
+    for line in lines:
+        m = re.match(r"^\s*([a-z_]+)\s*:\s*(.*?)\s*(#.*)?$", line)
         if m and m.group(1) == "ref":
-            meta["ref"].append([c.strip() for c in m.group(2).split("|")])
+            meta.setdefault("ref", []).append([c.strip() for c in m.group(2).split("|")])
         elif m:
             meta[m.group(1)] = m.group(2).strip().strip('"')
-    return {}, lines  # no closing ---: treat as body
+    return meta
 
 
-def png_size(path):
-    """(width, height) of a PNG, else None."""
-    with open(path, "rb") as f:
-        head = f.read(24)
-    if head[:8] != b"\x89PNG\r\n\x1a\n":
+def read_front_matter(lines, base_dir):
+    """Returns ({key: value, "ref": [rows]}, remaining lines) for a leading --- block, with the brand's keys
+    filled in and logo paths made absolute."""
+    if not lines or lines[0].strip() != "---":
+        return {}, lines
+    for n, line in enumerate(lines[1:], 1):
+        if line.strip() == "---":
+            meta = parse_keys(lines[1:n], {"ref": []})
+            break
+    else:
+        return {}, lines  # no closing ---: treat as body
+    for key in LOGO_KEYS:
+        if meta.get(key) and not os.path.isabs(meta[key]):
+            meta[key] = os.path.join(base_dir, meta[key])
+    brand = meta.get("brand")
+    if brand:
+        folder = os.path.join(env.BRANDS_DIR, brand)
+        conf = os.path.join(folder, "brand.yaml")
+        if os.path.exists(conf):
+            with open(conf, encoding="utf-8") as f:
+                defaults = parse_keys(f.read().splitlines(), {})
+            for key in LOGO_KEYS:
+                if defaults.get(key) and not os.path.isabs(defaults[key]):
+                    defaults[key] = os.path.join(folder, defaults[key])
+            meta = dict(defaults, **{k: v for k, v in meta.items() if v not in ("", [])})
+        else:
+            known = sorted(d for d in os.listdir(env.BRANDS_DIR)) if os.path.isdir(env.BRANDS_DIR) else []
+            print(f"brand {brand!r} not found (have: {', '.join(known) or 'none'}); using the front matter only",
+                  file=sys.stderr)
+    for key in LOGO_KEYS:
+        if meta.get(key) and not os.path.exists(meta[key]):
+            print(f"{key} not found: {meta[key]} (left out)", file=sys.stderr)
+            del meta[key]
+    return meta, lines[n + 1:]
+
+
+def image_size(path):
+    """(width, height) in pixels of a PNG/JPEG/GIF/BMP, else None."""
+    try:
+        img = DocxImage.from_file(path)
+        return img.px_width, img.px_height
+    except Exception:
         return None
-    return struct.unpack(">II", head[16:24])
 
 
 def render_mermaid(code, workdir, n, font):
@@ -240,6 +272,7 @@ class Writer:
         self.doc = Document()
         self.font, self.size, self.base = font, size, base_dir
         self.figures = self.tables = 0
+        self.primary, self.table_fill = NAVY, GREY
         sec = self.doc.sections[0]
         sec.page_width, sec.page_height = Cm(21), Cm(29.7)
         sec.top_margin, sec.bottom_margin = Cm(2.65), Cm(2.29)
@@ -260,14 +293,20 @@ class Writer:
             self.doc.styles[f"toc {level}"].paragraph_format.left_indent = Cm(0.5 * (level - 1))
 
     # front pages -----------------------------------------------------------------------------------------
-    def logo(self, par, meta, width):
-        path = meta.get("logo")
-        if path and not os.path.isabs(path):
-            path = os.path.join(self.base, path)
-        if path and os.path.exists(path):
-            par.add_run().add_picture(path, width=width)
-            return True
-        return False
+    def logo(self, par, path, max_w, max_h):
+        """Adds the image scaled to fit max_w x max_h cm, keeping its shape. False when there is none."""
+        if not path:
+            return False
+        size = image_size(path)
+        if not size:
+            print(f"logo not readable (use PNG or JPEG): {path}", file=sys.stderr)
+            return False
+        w, h = size
+        if w / h > max_w / max_h:
+            par.add_run().add_picture(path, width=Cm(max_w))
+        else:
+            par.add_run().add_picture(path, height=Cm(max_h))
+        return True
 
     def toc(self, entries):
         """A TOC field listing the level 1-2 headings; Word and the PDF step fill in the page numbers."""
@@ -294,11 +333,19 @@ class Writer:
         last.add_run()._element.append(end)
 
     def front_pages(self, meta, toc=None):
+        self.primary = meta.get("color_primary", NAVY).lstrip("#")
+        self.table_fill = meta.get("color_table", GREY).lstrip("#")
         center = WD_ALIGN_PARAGRAPH.CENTER
         p = self.doc.add_paragraph()
         p.alignment = center
         p.paragraph_format.space_before = Pt(36)
-        self.logo(p, meta, Cm(6.6))
+        if meta.get("client_logo"):
+            # contractor and agency side by side
+            self.logo(p, meta.get("logo"), 5, 2.5)
+            p.add_run("\u2003\u2003")
+            self.logo(p, meta["client_logo"], 5, 2.5)
+        else:
+            self.logo(p, meta.get("logo"), 6.6, 2.5)
         for key, bold, scale in (("company", True, 1.1), ("company_en", False, 1)):
             if meta.get(key):
                 self.para(meta[key], bold=bold, align=center, space_after=0, scale=scale)
@@ -315,7 +362,7 @@ class Writer:
                 ["รหัสเอกสาร / เวอร์ชัน", f"{meta.get('doc_code', BLANK)} / Version {version}"],
                 ["วันที่จัดทำ", meta.get("date", "___ / ___ / ______")],
                 ["ชั้นความลับ", "ชั้นความลับ: " + meta.get("classification", "ใช้ภายในโครงการ (Project Internal Use)")]]
-        self.table(rows, header=NAVY, widths=(5, 11.5))
+        self.table(rows, header=self.primary, widths=(5, 11.5))
         for key in ("address", "contact"):
             if meta.get(key):
                 self.para(meta[key], align=center, space_after=0, scale=0.8)
@@ -326,14 +373,14 @@ class Writer:
         first = [f"V.{version}", meta.get("date", ""), meta.get("author", ""),
                  meta.get("revision", "จัดทำ" + meta.get("title", "เอกสาร"))]
         self.table([["เวอร์ชัน", "วันที่", "ผู้แก้ไข", "สาระสำคัญที่แก้ไข"], first] + [[""] * 4] * 3,
-                   header=NAVY, widths=(2.5, 3.5, 4.5, 6))
+                   header=self.primary, widths=(2.5, 3.5, 4.5, 6))
         self.heading(2, "ตารางการอนุมัติเอกสาร (Approval Table)", toc=False)
         self.table([["บทบาท", "ชื่อ-นามสกุล", "ตำแหน่ง", "ลายมือชื่อ / วันที่"]] + [[""] * 4] * 4,
-                   header=NAVY, widths=(3.5, 4.5, 4, 4.5))
+                   header=self.primary, widths=(3.5, 4.5, 4, 4.5))
         self.heading(2, "เอกสารอ้างอิง (Reference Documents)", toc=False)
         refs = [(r + [""] * 4)[:4] for r in meta.get("ref", [])]
         self.table([["รหัส", "ชื่อเอกสาร", "เวอร์ชัน", "วันที่"]] + (refs or [[""] * 4] * 4),
-                   header=NAVY, widths=(2.5, 8.5, 2.5, 3))
+                   header=self.primary, widths=(2.5, 8.5, 2.5, 3))
         if meta.get("note"):
             self.para("หมายเหตุ: " + meta["note"])
         self.page_break()
@@ -357,16 +404,16 @@ class Writer:
         p = sec.header.paragraphs[0]
         right_tab(p, sec)
         small = self.size * 0.7
-        if self.logo(p, meta, Cm(3.2)):
+        if self.logo(p, meta.get("header_logo") or meta.get("logo"), 4, 1):
             set_font(p.add_run("  "), self.font, small)
         run = p.add_run(meta.get("company_en") or meta.get("company", ""))
         set_font(run, self.font, small, True)
-        run.font.color.rgb = RGBColor.from_string(NAVY)
+        run.font.color.rgb = RGBColor.from_string(self.primary)
         version = meta.get("version", "1.0")
         run = p.add_run(f"\t{meta.get('doc_code', '')}  Version {version}")
         set_font(run, self.font, small)
         run.font.color.rgb = RGBColor.from_string("666666")
-        border(p, "bottom", NAVY)
+        border(p, "bottom", self.primary)
 
     def footer(self, sec, meta):
         sec.footer.is_linked_to_previous = False
@@ -427,7 +474,8 @@ class Writer:
         p.paragraph_format.space_after = Pt(0)
         add_runs(p, "• " + text, self.font, self.size)
 
-    def table(self, rows, header=GREY, widths=None):
+    def table(self, rows, header=None, widths=None):
+        header = header or self.table_fill
         width = max(len(r) for r in rows)
         t = self.doc.add_table(rows=len(rows), cols=width)
         t.style = "Table Grid"
@@ -453,7 +501,7 @@ class Writer:
                 add_runs(par, row[j] if j < len(row) else "", self.font, self.size, i == 0)
                 if i == 0:
                     shade(cell, header)
-                    if header == NAVY:
+                    if header == self.primary:
                         for run in par.runs:
                             run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
         self.doc.add_paragraph().paragraph_format.space_after = Pt(0)
@@ -463,7 +511,7 @@ class Writer:
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.keep_with_next = True
         # fit 15 x 20 cm so a tall diagram (an ER chart) stays on one page
-        size = png_size(path)
+        size = image_size(path)
         if size and size[1] * 15 > size[0] * 20:
             p.add_run().add_picture(path, height=Cm(20))
         else:
@@ -502,7 +550,7 @@ class Writer:
 
 def convert(md_path, out_path, font, size):
     with open(md_path, encoding="utf-8") as f:
-        meta, lines = read_front_matter(f.read().splitlines())
+        meta, lines = read_front_matter(f.read().splitlines(), os.path.dirname(os.path.abspath(md_path)))
     w = Writer(font, size, os.path.dirname(os.path.abspath(md_path)))
     if meta:
         headings = [re.match(r"^(#{1,2})\s+(.*)$", ln.strip()) for ln in lines]

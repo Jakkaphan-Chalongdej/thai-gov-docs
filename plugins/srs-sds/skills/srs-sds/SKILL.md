@@ -1,6 +1,6 @@
 ---
 name: srs-sds
-description: เขียนเอกสาร SRS และ SDS ภาษาไทยแบบหน่วยงานรัฐจาก TOR หรือบรีฟ ได้แก่ ความต้องการพร้อม acceptance criteria, เอกสารออกแบบระบบกับ schema PostgreSQL และเอกสารส่งมอบ SRS/SDD แบบผู้รับจ้าง (ปกบริษัท ประวัติการแก้ไข ตารางอนุมัติ สารบัญ, FR/NFR แยกโมดูลอ้างอิงข้อ TOR, ตารางสิทธิ์ตามบทบาท, ADR, มุมมองสถาปัตยกรรม, หน้าจอ, ตารางข้อมูล, API, ความปลอดภัย, ตารางสอบทานย้อนกลับ) ออกเป็น Word/PDF ใช้เมื่อผู้ใช้ขอ SRS, SDS, SDD, เอกสารความต้องการ, เอกสารออกแบบระบบ, ตารางสืบย้อน TOR หรือเอกสารส่งมอบให้คณะกรรมการตรวจรับ
+description: เขียนเอกสาร SRS และ/หรือ SDS ภาษาไทยแบบหน่วยงานรัฐจาก TOR หรือบรีฟ (ทำ SRS อย่างเดียว, SDS อย่างเดียวจาก SRS ที่มีอยู่ หรือทั้งคู่) ได้แก่ ความต้องการพร้อม acceptance criteria, เอกสารออกแบบระบบกับ schema PostgreSQL และเอกสารส่งมอบ SRS/SDD แบบผู้รับจ้าง (ปกบริษัท ประวัติการแก้ไข ตารางอนุมัติ สารบัญ, FR/NFR แยกโมดูลอ้างอิงข้อ TOR, ตารางสิทธิ์ตามบทบาท, ADR, มุมมองสถาปัตยกรรม, หน้าจอ, ตารางข้อมูล, API, ความปลอดภัย, ตารางสอบทานย้อนกลับ) ตามแบรนด์บริษัท (ชื่อ ที่อยู่ โลโก้ เปลี่ยนได้) ออกเป็น Word/PDF ใช้เมื่อผู้ใช้ขอ SRS, SDS, SDD, เอกสารความต้องการ, เอกสารออกแบบระบบ, ตารางสืบย้อน TOR หรือเอกสารส่งมอบให้คณะกรรมการตรวจรับ
 ---
 # SRS / SDS for Thai government software projects
 
@@ -11,10 +11,14 @@ committee expects. Written from the AI Factory pipeline (BA → Architect → Do
 
 | The user asks for | Do | Output files |
 |---|---|---|
-| SRS / ความต้องการ / user stories | Step A | `srs.md` |
-| ออกแบบระบบ / architecture / schema | Step B (needs an SRS: run A first if there is none) | `design.md`, `schema.sql` |
-| เอกสารส่งมอบ SRS/SDS / เอกสารตรวจรับ | Steps A → B → C (reuse files that already exist) | `srs-doc.md`, `sds-doc.md` |
-| "ทำ SRS SDS ให้ครบ" | A → B → C | all of the above |
+| SRS / เอกสารความต้องการ (ฉบับส่งมอบ) | A → C-SRS | `srs.md`, `srs-doc` .md/.docx/.pdf |
+| SDS / SDD / เอกสารออกแบบระบบ (ฉบับส่งมอบ) | SRS in hand (else A first) → B → C-SDS | `design.md`, `schema.sql`, `sds-doc` .md/.docx/.pdf |
+| SRS และ SDS / "ทำให้ครบ" / เอกสารตรวจรับ | A → B → C-SRS → C-SDS | all of the above |
+| only working files: ความต้องการ, user stories, schema | A, or B | `srs.md`, or `design.md` + `schema.sql` |
+
+An SRS-only job never runs Step B. Reuse files that already exist instead of redoing a step. An SDS job may start
+from a finished SRS the user gives (.md, .docx, .pdf, also one made elsewhere): Step B reads its FR/NFR ids and
+roles from it, and the SDS cites those ids unchanged.
 
 Write the files into a folder the user names, else `./srs-sds-<ชื่อระบบสั้น>/`. Show each file to the user before
 starting the next step when the job has more than one step, so they can correct requirements early.
@@ -31,17 +35,19 @@ Follow [references/srs.md](references/srs.md). One document, about 1,000 words: 
 the "เรื่องพื้นฐาน" table.
 
 ## Step B: System design + schema
-Follow [references/design.md](references/design.md). `design.md` (architecture, modules, tables, API, rules,
+Follow [references/design.md](references/design.md); its input is `srs.md` or the SRS the user gave. `design.md` (architecture, modules, tables, API, rules,
 workflows, security, roles) and `schema.sql` (PostgreSQL DDL with Thai COMMENT ON TABLE). Every FR lands in a module,
 a table and an API row.
 
 ## Step C: Hand-in documents for the committee
-Follow [references/handover.md](references/handover.md), then read the style examples before writing:
-[references/examples-srs.md](references/examples-srs.md) and [references/examples-sds.md](references/examples-sds.md).
-Build the facts list first (TOR items, U-/M/FR-/NFR-/SCR-/TBL-/API-/ADR- codes, screens and their fields, tables and
-their columns) from the files of steps A–B, and use those names exactly in both documents. Ask the user once for
-the cover details the sources lack (company, address, logo, contract number, author) and put them in each file's
-front matter; leave out what they do not know.
+Follow [references/handover.md](references/handover.md) (facts list, front matter, brand and logos), then the
+layout for the document being written: `layouts/<layout>/srs-doc.md` for C-SRS, `layouts/<layout>/sds-doc.md` for
+C-SDS, and that folder's examples. Only layout today: [contumeliax](layouts/contumeliax/srs-doc.md).
+
+Brands live in `brands/<name>/` (brand.yaml with company details and colours, logo.png); today `contumeliax`.
+Ask the user once which brand to use (or the company details if none fits), plus the contract number, author and
+date if they want them on the cover; leave out what they do not know. A different logo for one project goes in
+the front matter (`logo:`), the agency's emblem in `client_logo:`.
 
 ## Final check (every job)
 - Every TOR item / brief line maps to at least one FR; every FR id cited later exists in the SRS.
@@ -75,4 +81,5 @@ bundled scripts. `<skill-dir>` is this skill's folder; on Windows use `py` inste
    .docx opens: answering yes fills in the contents page numbers.
 
 Screenshots: put PNGs in `screens/` and reference them as `![ชื่อหน้าจอ](screens/x.png)`; `[ภาพหน้าจอ: …]` lines
-become grey boxes to paste into later. The company logo goes next to the markdown files (`logo: logo.png`).
+become grey boxes to paste into later. Logo files named in the front matter are paths relative to the markdown
+file; a brand's own logo needs nothing.
