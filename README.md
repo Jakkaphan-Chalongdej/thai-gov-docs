@@ -8,18 +8,15 @@
 พิมพ์ใน Claude Code ครั้งเดียว
 
 ```
-/plugin install srs-sds --marketplace <REPO>
+/plugin install srs-sds --marketplace Jakkaphan-Chalongdej/thai-gov-docs
 ```
 
 Claude Code ที่เก่ากว่า 2.1.275 ใช้สองบรรทัดนี้แทน
 
 ```
-/plugin marketplace add <REPO>
+/plugin marketplace add Jakkaphan-Chalongdej/thai-gov-docs
 /plugin install srs-sds@thai-gov-docs
 ```
-
-`<REPO>` คือ `owner/repo` ถ้าอยู่บน GitHub หรือ URL ของ git เต็ม (เช่น `https://gitlab.example.com/team/thai-gov-docs.git`)
-สำหรับ GitLab และ git อื่น ถ้า repo เป็น private ต้อง clone ด้วย git ในเครื่องได้ก่อน
 
 รับรุ่นใหม่ได้ด้วย
 
