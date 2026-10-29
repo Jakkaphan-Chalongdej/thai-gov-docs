@@ -11,18 +11,24 @@
       "name": "tor",
       "source": "./plugins/tor",
       "description": "ร่างขอบเขตของงาน (TOR) จัดจ้างระบบสารสนเทศของหน่วยงานรัฐ พร้อมข้อความมาตรฐาน ออกเป็น Word และ PDF",
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "name": "srs-sds",
       "source": "./plugins/srs-sds",
       "description": "เขียน SRS และ SDS ภาษาไทยแบบหน่วยงานรัฐจาก TOR ออกเป็น markdown, Word และ PDF",
-      "version": "1.3.0"
+      "version": "1.3.1"
     },
     {
       "name": "user-manual",
       "source": "./plugins/user-manual",
       "description": "เขียนคู่มือการใช้งานระบบ (User Manual) ภาษาไทยทีละขั้นพร้อมภาพหน้าจอ ออกเป็น Word และ PDF ตามแบรนด์บริษัท",
+      "version": "1.0.1"
+    },
+    {
+      "name": "uat-doc",
+      "source": "./plugins/uat-doc",
+      "description": "เขียนเอกสารทดสอบการยอมรับระบบ (UAT) รายเมนูหรือรายโมดูล ตารางกรณีทดสอบพร้อมภาพหน้าจอและช่องติ๊กผ่าน/ไม่ผ่าน ออกเป็น Word และ PDF",
       "version": "1.0.0"
     }
   ]

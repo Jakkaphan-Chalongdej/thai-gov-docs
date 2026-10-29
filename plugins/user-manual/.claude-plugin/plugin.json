@@ -1,6 +1,6 @@
 {
   "name": "user-manual",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "เขียนคู่มือการใช้งานระบบ (User Manual) ภาษาไทยแบบหน่วยงานรัฐ ทีละงานทีละขั้นพร้อมภาพหน้าจอและกรอบเน้นจุดที่ต้องคลิก ออกเป็น Word และ PDF ตามแบรนด์บริษัท",
   "author": { "name": "AI Factory" },
   "keywords": ["user manual", "คู่มือ", "thai", "government", "docx"]

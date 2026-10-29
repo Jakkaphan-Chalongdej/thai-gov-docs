@@ -29,6 +29,14 @@ from page 2, and a footer with the drafting committee's signature lines on every
 "committee: name | position" lines). "toc: yes" adds a contents page; "thai_digits: yes" writes the body's
 numbers in Thai digits (๑๒๓), leaving words with Latin letters (model names, URLs) as they are.
 
+"cover: uat" makes a User Acceptance Test front: a right-aligned English title block (title, "for", system,
+subtitle) on the cover, the contents, then Revision History (author, date, revision, version) and a blank Test
+History table (test_rows lines, default 4); page numbers bottom right, header rows in color_table (A5C9EB).
+
+A table cell may hold several lines separated by "<br>"; a line in such a cell can be "- item" (a dash list),
+"[ ] label" (a Word check box), an image line or a [ภาพหน้าจอ: name] placeholder, sized to the cell. Rows with
+such cells may break across pages.
+
 An image line may end in boxes to draw on the picture, e.g. ![หน้าจอเข้าสู่ระบบ](screens/login.png){box=820,410,160,48}
 (x,y,width,height in the image's pixels, or with % of its size; several boxes separated by ";"), and
 "crop=x,y,w,h" (same units) to print only that part, so a small popup is readable. Needs Pillow.
@@ -52,7 +60,7 @@ try:
     from docx.enum.table import WD_TABLE_ALIGNMENT
     from docx.enum.section import WD_SECTION
     from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_TAB_ALIGNMENT, WD_TAB_LEADER
-    from docx.oxml import OxmlElement
+    from docx.oxml import OxmlElement, parse_xml
     from docx.oxml.ns import qn
     from docx.image.image import Image as DocxImage
     from docx.shared import Cm, Pt, RGBColor, Twips
@@ -75,6 +83,14 @@ IMAGE = re.compile(r"^!\[(.*?)\]\((.+?)\)\s*(?:\{(.*?)\})?\s*$")
 # a numbered clause or step ("6.9.1.1 …", "๒.๑ …", "1) …") starts its own paragraph
 ITEM = re.compile(r"^(?:[0-9๐-๙]+\.)+[0-9๐-๙]*\s|^[0-9๐-๙]+\)\s")
 PLACEHOLDER = re.compile(r"^\[ภาพหน้าจอ:\s*(.+?)\]\s*$")
+CHECKBOX = re.compile(r"^\[( |x|X)\]\s*(.*)$")
+UAT = {"title": "User Acceptance Test Documents", "color_table": "A5C9EB", "figure_label": "none"}  # "cover: uat" defaults
+
+
+def rich(text):
+    """A table cell written as several lines (<br>), or one image / placeholder / check box line."""
+    t = text.strip()
+    return "<br>" in t or bool(IMAGE.match(t) or PLACEHOLDER.match(t) or CHECKBOX.match(t))
 
 
 def set_font(run, font, size, bold=None):
@@ -158,11 +174,33 @@ def col_widths(rows, total=16.7):
     """Column widths in cm from the text length: short code columns stay narrow, prose columns get the rest."""
     cols = range(max(len(r) for r in rows))
     cell = [[r[j] if j < len(r) else "" for r in rows] for j in cols]
-    longest = [max(len(c) for c in col) for col in cell]
+
+    def length(c):
+        if not rich(c):
+            return len(c)
+        return max((60 if IMAGE.match(x.strip()) or PLACEHOLDER.match(x.strip()) else len(x))
+                   for x in c.split("<br>"))
+    longest = [max(length(c) for c in col) for col in cell]
     weights = [min(max(n, 4), 60) for n in longest]
     # a column never breaks inside its longest word (an id such as FR-BK-01): about 0.25 cm a character
-    floor = [min(max(max((len(w) for c in col for w in c.split()), default=0) * 0.25 + 0.4, 1.6), 5) for col in cell]
+    floor = [min(max(max((len(w) for c in col for w in c.replace("<br>", " ").split()
+                              if not w.startswith(("![", "(", "[ภาพ"))), default=0) * 0.25 + 0.4, 1.6), 5)
+             for col in cell]
     widths = [max(total * w / sum(weights), f) for w, f in zip(weights, floor)]
+    if any(rich(c) for col in cell for c in col):
+        # a test table: check box and short columns keep their floor, the long text column gives up the space
+        floor = [max(f, 2.3) if any(CHECKBOX.match(x.strip()) for c in col for x in c.split("<br>")) else f
+                 for f, col in zip(floor, cell)]
+        # a bold header word ("Remark", "Function") never breaks
+        floor = [max(f, max((len(w) for w in col[0].split()), default=0) * 0.3 + 0.6) for f, col in zip(floor, cell)]
+        widths = [max(w, f) for w, f in zip(widths, floor)]
+        extra = sum(widths) - total
+        free = [j for j, (w, f) in enumerate(zip(widths, floor)) if w > f]
+        room = sum(widths[j] - floor[j] for j in free)
+        if extra > 0 and room > extra:
+            for j in free:
+                widths[j] -= extra * (widths[j] - floor[j]) / room
+            return widths
     scale = total / sum(widths)
     return [w * scale for w in widths]
 
@@ -418,6 +456,8 @@ class Writer:
     def front_pages(self, meta, toc=None):
         if meta.get("cover") == "tor":
             return self.tor_front(meta, toc)
+        if meta.get("cover") == "uat":
+            return self.uat_front(dict(UAT, **meta), toc)
         if meta.get("cover") == "manual":
             meta = dict(MANUAL, **meta)
         self.primary = meta.get("color_primary", NAVY).lstrip("#")
@@ -446,6 +486,51 @@ class Writer:
         body._sectPr.append(pg)
         self.header(self.doc.sections[0], meta)
         self.footer(body, meta)
+
+    def uat_front(self, meta, toc):
+        """A UAT document's front: right-aligned title block, contents, revision and test history tables."""
+        self.table_fill = meta["color_table"].lstrip("#")
+        self.figure_label = meta["figure_label"]
+        right = WD_ALIGN_PARAGRAPH.RIGHT
+        if meta.get("logo"):
+            p = self.doc.add_paragraph()
+            p.alignment = right
+            self.logo(p, meta["logo"], 5, 2.5)
+        big = 36 / self.size  # the sample's 36 pt title and 28 pt subtitle, whatever the body size
+        p = self.para(meta["title"], bold=True, align=right, space_after=0, scale=big)
+        p.paragraph_format.space_before = Pt(36)
+        self.para("for", bold=True, align=right, space_after=0, scale=big).paragraph_format.space_before = Pt(36)
+        if meta.get("system"):
+            self.para(meta["system"], bold=True, align=right, space_after=0,
+                      scale=big).paragraph_format.space_before = Pt(120)
+        if meta.get("subtitle"):
+            self.para(meta["subtitle"], bold=True, align=right, space_after=0, scale=28 / self.size)
+        if meta.get("company"):
+            self.para(meta["company"], align=right, space_after=0).paragraph_format.space_before = Pt(120)
+        self.page_break()
+        self.toc(toc)
+        upd = OxmlElement("w:updateFields")
+        upd.set(qn("w:val"), "true")
+        self.doc.settings.element.append(upd)
+        self.page_break()
+        plain = "FFFFFF"
+        self.para("Revision History", bold=True, space_after=2)
+        first = [meta.get("author", ""), meta.get("date", ""), meta.get("revision", "จัดทำเอกสาร UAT"),
+                 meta.get("version", "")]
+        self.table([["Revised By", "Date", "Reason for Changes", "Version"], first] + [[""] * 4] * 2,
+                   header=plain, widths=(4.5, 3, 6.7, 2.5))
+        self.para("Test History", bold=True, space_after=2).paragraph_format.space_before = Pt(12)
+        n = int(meta.get("test_rows", "4") or 4)
+        self.table([["Date", "Detail", "Tested By", "Position"]] + [[""] * 4] * n,
+                   header=plain, widths=(3, 6.7, 4, 3))
+        for row in self.doc.tables[-1].rows[1:]:
+            row.height = Cm(0.9)
+        self.page_break()
+        sec = self.doc.sections[0]
+        sec.different_first_page_header_footer = True
+        p = sec.footer.paragraphs[0]
+        p.alignment = right
+        field(p, "PAGE", self.font, self.size)
 
     def tor_front(self, meta, toc):
         """A TOR's first page: seal and title block, body on the same page; page numbers at the top from page 2
@@ -733,8 +818,11 @@ class Writer:
             if i == 0:
                 # repeat the header row on every page the table runs onto
                 tr.append(OxmlElement("w:tblHeader"))
-            cant = OxmlElement("w:cantSplit")
-            tr.append(cant)
+            cells = [row[j] if j < len(row) else "" for j in range(width)]
+            if i == 0 or not any(rich(c) for c in cells):
+                # a row with a screenshot may be taller than a page, so only plain rows are kept whole
+                cant = OxmlElement("w:cantSplit")
+                tr.append(cant)
             for j in range(width):
                 cell = t.cell(i, j)
                 cell.width = Cm(widths[j])
@@ -742,13 +830,69 @@ class Writer:
                 par.paragraph_format.space_after = Pt(0)
                 if i == 0:
                     par.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                add_runs(par, row[j] if j < len(row) else "", self.font, self.size, i == 0)
+                if i > 0 and rich(cells[j]):
+                    self.rich_cell(cell, cells[j], widths[j])
+                    continue
+                add_runs(par, cells[j], self.font, self.size, i == 0)
                 if i == 0:
                     shade(cell, header)
                     if header == self.primary:
                         for run in par.runs:
                             run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
         self.doc.add_paragraph().paragraph_format.space_after = Pt(0)
+
+    def rich_cell(self, cell, text, width_cm):
+        """Writes a multi-line cell: text lines, "- " dash items, "[ ]" check boxes, pictures and placeholders."""
+        first = True
+        for part in text.split("<br>"):
+            part = part.strip()
+            par = cell.paragraphs[0] if first else cell.add_paragraph()
+            first = False
+            par.paragraph_format.space_after = Pt(0)
+            m = IMAGE.match(part)
+            if m:
+                path = m.group(2) if os.path.isabs(m.group(2)) else os.path.join(self.base, m.group(2))
+                if os.path.exists(path):
+                    if m.group(3):
+                        path = draw_boxes(path, m.group(3), os.path.join(self.workdir, f"cell{id(par)}.png"))
+                    par.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    size = image_size(path)
+                    par.add_run().add_picture(path, width=Cm(min(width_cm - 0.4, size[0] / 60 if size else 99)))
+                    continue
+                part = f"[ภาพหน้าจอ: {m.group(1) or os.path.basename(path)}]"
+            m = PLACEHOLDER.match(part)
+            if m:
+                par.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                par.paragraph_format.space_before = Pt(30)
+                par.paragraph_format.space_after = Pt(30)
+                for side in ("top", "bottom", "left", "right"):
+                    border(par, side, "808080", 4)
+                run = par.add_run(f"[ใส่ภาพหน้าจอ: {m.group(1)}]")
+                set_font(run, self.font, self.size)
+                run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+                continue
+            m = CHECKBOX.match(part)
+            if m:
+                self.checkbox(par, m.group(1).lower() == "x")
+                add_runs(par, " " + m.group(2), self.font, self.size)
+                continue
+            if part.startswith("- "):
+                par.paragraph_format.left_indent = Cm(0.5)
+                par.paragraph_format.first_line_indent = Cm(-0.35)
+            add_runs(par, part, self.font, self.size)
+
+    def checkbox(self, par, checked=False):
+        """A Word check box content control (ticks when clicked in Word; LibreOffice shows the box)."""
+        w14 = "http://schemas.microsoft.com/office/word/2010/wordml"
+        self.boxes = getattr(self, "boxes", 0) + 1
+        mark = "\u2612" if checked else "\u2610"
+        xml = (f'<w:sdt xmlns:w="{qn("w:sdt").split("}")[0][1:]}" xmlns:w14="{w14}"><w:sdtPr>'
+               f'<w:id w:val="{900000 + self.boxes}"/><w14:checkbox><w14:checked w14:val="{int(checked)}"/>'
+               '<w14:checkedState w14:val="2612" w14:font="MS Gothic"/>'
+               '<w14:uncheckedState w14:val="2610" w14:font="MS Gothic"/></w14:checkbox></w:sdtPr>'
+               '<w:sdtContent><w:r><w:rPr><w:rFonts w:ascii="MS Gothic" w:eastAsia="MS Gothic" w:hAnsi="MS Gothic"'
+               f' w:hint="eastAsia"/></w:rPr><w:t>{mark}</w:t></w:r></w:sdtContent></w:sdt>')
+        par._p.append(parse_xml(xml))
 
     def image(self, path, framed=False):
         p = self.doc.add_paragraph()
@@ -826,6 +970,7 @@ def convert(md_path, out_path, font, size):
     else:
         w.plain_footer()
     workdir = tempfile.mkdtemp(prefix="srs-sds-")
+    w.workdir = workdir
     diagrams = 0
     i = 0
     while i < len(lines):
