@@ -1,6 +1,6 @@
 {
   "name": "uat-doc",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "เขียนเอกสารทดสอบการยอมรับระบบ (UAT) ภาษาไทยรายเมนูหรือรายโมดูล จาก SRS/SDS คู่มือ หรือระบบที่รันอยู่ ตารางกรณีทดสอบพร้อมภาพหน้าจอและช่องติ๊กผ่าน/ไม่ผ่าน ออกเป็น Word และ PDF",
   "author": { "name": "AI Factory" },
   "keywords": ["uat", "user acceptance test", "ทดสอบ", "ตรวจรับ", "thai", "government", "docx"]

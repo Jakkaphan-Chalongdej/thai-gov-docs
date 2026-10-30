@@ -17,11 +17,13 @@ client, doc_code, version, date, classification, author, revision, note, and rep
 "ref: code | name | version | date" lines. "brand: <name>" fills in the keys the document leaves out from
 brands/<name>/brand.yaml (company details, logo, colours); the document's own keys win.
 
-"cover: manual" makes a user-manual front instead: a bordered cover with the logo, title, system name
-(system, system_en) and "จัดทำโดย" (prepared_by), then the contents; the header shows the system name, chapters
-are coloured bars starting a new page, screenshots get a frame and captions are not numbered. Each of these can
-be set on its own: header_text, footer_left, page_total (yes/no), chapter_style (bar/plain), figure_label
-(a word, or none), image_border (yes/no).
+"cover: manual" makes a user manual in the same hand-in form as the SRS: the cover above with title
+"คู่มือการใช้งาน" / "User Manual" and the system name (system, system_en) under it, the same history, approval,
+reference and contents pages, header and footer; screenshots get a frame. "cover_style: bordered" keeps the
+older manual front instead: a bordered cover with the logo, title, system name and "จัดทำโดย" (prepared_by),
+the system name in the header, chapters as coloured bars starting a new page and unnumbered captions. Each of
+these can be set on its own: header_text, footer_left, page_total (yes/no), chapter_style (bar/plain),
+figure_label (a word, or none), image_border (yes/no).
 
 "cover: tor" makes the first page of a TOR: the agency seal (logo), a centred title block (title, project,
 "สำหรับ" client, fiscal_year) over a dashed rule, the body starting on the same page; page numbers top centre
@@ -75,8 +77,9 @@ HEADING_SIZES = {1: 2, 2: 0, 3: 0, 4: 0}  # points added to a 16 pt body, scaled
 NAVY, GREY = "1F3864", "D9D9D9"  # default front-page table headers / body table headers
 BLANK = "..................................."
 LOGO_KEYS = ("logo", "header_logo", "client_logo")
-MANUAL = {"footer_left": "คู่มือการใช้งาน (User Manual)", "page_total": "no", "chapter_style": "bar",
-          "figure_label": "none", "image_border": "yes"}  # defaults that "cover: manual" brings
+MANUAL = {"title": "คู่มือการใช้งาน", "title_en": "User Manual", "image_border": "yes"}  # "cover: manual" defaults
+BORDERED = {"title": "คู่มือการใช้งาน (User Manual)", "title_en": "", "footer_left": "คู่มือการใช้งาน (User Manual)",
+            "page_total": "no", "chapter_style": "bar", "figure_label": "none"}  # and with "cover_style: bordered"
 TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
 TABLE_SEP = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")
 IMAGE = re.compile(r"^!\[(.*?)\]\((.+?)\)\s*(?:\{(.*?)\})?\s*$")
@@ -458,8 +461,9 @@ class Writer:
             return self.tor_front(meta, toc)
         if meta.get("cover") == "uat":
             return self.uat_front(dict(UAT, **meta), toc)
+        bordered = meta.get("cover") == "manual" and meta.get("cover_style") == "bordered"
         if meta.get("cover") == "manual":
-            meta = dict(MANUAL, **meta)
+            meta = dict(MANUAL, **dict(BORDERED, **meta) if bordered else meta)
         self.primary = meta.get("color_primary", NAVY).lstrip("#")
         self.table_fill = meta.get("color_table", GREY).lstrip("#")
         self.figure_label = meta.get("figure_label", "รูปภาพที่")
@@ -467,12 +471,12 @@ class Writer:
         if meta.get("chapter_style") == "bar":
             self.chapter_bar()
             self._bar.set(qn("w:fill"), self.primary)
-        if meta.get("cover") == "manual":
+        if bordered:
             self.manual_cover(meta)
         else:
             self.full_cover(meta)
         self.heading(1, "สารบัญ", toc=False)
-        if meta.get("cover") == "manual":
+        if bordered:
             p = self.para("หน้า", bold=True, align=WD_ALIGN_PARAGRAPH.RIGHT, space_after=0)
         self.toc(toc)
         # ask Word to refresh the table of contents and page counts when the file opens
@@ -665,7 +669,14 @@ class Writer:
         self.para("", space_after=24)
         self.para(meta.get("title", ""), bold=True, align=center, space_after=0, scale=1.4)
         if meta.get("title_en"):
-            self.para(meta["title_en"], bold=True, align=center, space_after=24, scale=1.2)
+            self.para(meta["title_en"], bold=True, align=center, space_after=0, scale=1.2)
+        # a manual names its system under the title
+        for key, scale in (("system", 1.2), ("system_en", 1)):
+            if meta.get(key):
+                p = self.para(meta[key], bold=True, align=center, space_after=0, scale=scale)
+                if key == "system":
+                    p.paragraph_format.space_before = Pt(12)
+        self.para("", space_after=12)
         version = meta.get("version", "1.0")
         rows = [["รายการ", "รายละเอียด"],
                 ["ชื่อโครงการ", meta.get("project", BLANK)],
@@ -700,8 +711,9 @@ class Writer:
 
     def header(self, sec, meta):
         """Logo, company (or system) name and document code over a rule; the body section inherits it."""
-        if meta.get("cover") == "manual":
-            # the manual's cover page carries no header
+        bordered = meta.get("cover") == "manual" and meta.get("cover_style") == "bordered"
+        if bordered:
+            # the bordered cover page carries no header
             sec.different_first_page_header_footer = True
         p = sec.header.paragraphs[0]
         right_tab(p, sec)
@@ -709,7 +721,7 @@ class Writer:
         logo = meta.get("header_logo") or meta.get("logo")
         if meta.get("header_text"):
             lines = [meta["header_text"]]
-        elif meta.get("cover") == "manual":
+        elif bordered:
             lines = [x for x in (meta.get("system"), meta.get("system_en")) if x]
         else:
             lines = [meta.get("company_en") or meta.get("company", "")]
