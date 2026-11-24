@@ -75,6 +75,30 @@ def find_soffice():
     return None
 
 
+def find_chrome():
+    """Chrome, Chromium or Edge for capture.py: $CHROME, the installed browser, else the headless Chrome that
+    mermaid-cli (puppeteer) downloaded."""
+    if os.environ.get("CHROME") and os.path.exists(os.environ["CHROME"]):
+        return os.environ["CHROME"]
+    if WINDOWS:
+        paths = [os.path.join(os.environ.get(v, ""), *p) for v in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA")
+                 for p in (("Google", "Chrome", "Application", "chrome.exe"),
+                           ("Microsoft", "Edge", "Application", "msedge.exe"))]
+    elif MAC:
+        paths = [f"/Applications/{a}.app/Contents/MacOS/{a}" for a in ("Google Chrome", "Chromium", "Microsoft Edge")]
+    else:
+        paths = [shutil.which(n) or "" for n in ("google-chrome", "google-chrome-stable", "chromium",
+                                                  "chromium-browser", "microsoft-edge")]
+    home = os.path.expanduser("~")
+    paths += sorted(glob.glob(os.path.join(home, ".cache", "puppeteer", "chrome", "*", "*", "**",
+                                           "Google Chrome for Testing" if MAC else "chrome*"), recursive=True),
+                    reverse=True)
+    for p in paths:
+        if p and os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return None
+
+
 def find_mmdc():
     """Command list for mermaid-cli: the copy setup.py installed, mmdc on PATH, else npx (downloads on first use)."""
     local = os.path.join(TOOLS_DIR, "node_modules", ".bin", "mmdc.cmd" if WINDOWS else "mmdc")

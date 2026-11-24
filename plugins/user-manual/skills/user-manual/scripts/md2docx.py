@@ -43,6 +43,10 @@ An image line may end in boxes to draw on the picture, e.g. ![หน้าจอ
 (x,y,width,height in the image's pixels, or with % of its size; several boxes separated by ";"), and
 "crop=x,y,w,h" (same units) to print only that part, so a small popup is readable. Needs Pillow.
 
+Pictures print at their natural size, up to the text area (16.5 x 22 cm): a screenshot at 60 screen points per cm,
+reading the pixel density from the file (144 dpi = a 2x Retina or capture.py picture); a picture that would print
+below 200 ppi is reported. Diagrams render at 5x (about 600 ppi), kept under 24 megapixels for Google Docs.
+
 Run setup.py once first: it installs python-docx, mermaid-cli and the Sarabun font where missing. Without
 mermaid-cli a diagram is kept as text with a note; without LibreOffice there is no PDF.
 """
@@ -304,7 +308,9 @@ def draw_boxes(path, spec, out):
             boxes.append(nums)
     if not boxes and not crop:
         return path
-    im = Image.open(path).convert("RGB")
+    src = Image.open(path)
+    dpi = src.info.get("dpi")
+    im = src.convert("RGB")
 
     def rect(nums):
         return [float(n.rstrip("%")) * (im.width if i % 2 == 0 else im.height) / 100 if n.endswith("%")
@@ -321,7 +327,7 @@ def draw_boxes(path, spec, out):
     if crop:
         x, y, w, h = rect(crop)
         im = im.crop((max(0, int(x)), max(0, int(y)), min(im.width, int(x + w)), min(im.height, int(y + h))))
-    im.save(out)
+    im.save(out, dpi=dpi) if dpi else im.save(out)
     return out
 
 
@@ -350,6 +356,33 @@ def image_size(path):
         return None
 
 
+def density(path):
+    """Pixels per screen point: 2 for a Retina/2x capture (144 dpi in the file, as macOS and capture.py write),
+    1 for a plain capture. Without a dpi a very wide image (2400 px or more) is taken as 2x."""
+    try:
+        img = DocxImage.from_file(path)
+        dpi, width = img.horz_dpi, img.px_width
+    except Exception:
+        return 1
+    if dpi and dpi >= 100 and dpi != 96:
+        return max(1, round(dpi / 72))
+    return 2 if width >= 2400 else 1
+
+
+SOFT_PPI = 200  # a screenshot printed below this looks soft on paper
+
+
+def warn_soft(path, width_px, width_cm):
+    ppi = width_px / (width_cm / 2.54)
+    if ppi < SOFT_PPI:
+        print(f"{os.path.basename(path)} prints at {ppi:.0f} ppi, below {SOFT_PPI}: capture it at 2x "
+              "(scripts/capture.py, or a Retina screen) for a sharp print", file=sys.stderr)
+
+
+MERMAID_SCALE = 5  # about 600 ppi at the printed size
+MAX_PIXELS = 24_000_000  # Google Docs refuses pictures over 25 megapixels
+
+
 def render_mermaid(code, workdir, n, font):
     cmd = env.find_mmdc()
     if not cmd:
@@ -367,7 +400,7 @@ def render_mermaid(code, workdir, n, font):
         # npx downloads into the npm cache; a private one avoids a broken ~/.npm
         run_env = dict(run_env, npm_config_cache=os.path.join(workdir, "npm"))
     try:
-        subprocess.run(cmd + ["-i", src, "-o", out, "-c", cfg, "-s", "3", "-b", "white"],
+        subprocess.run(cmd + ["-i", src, "-o", out, "-c", cfg, "-s", str(MERMAID_SCALE), "-b", "white"],
                        check=True, capture_output=True, timeout=300, env=run_env)
     except (subprocess.SubprocessError, OSError) as e:
         err = getattr(e, "stderr", b"") or b""
@@ -376,7 +409,21 @@ def render_mermaid(code, workdir, n, font):
     finally:
         if fc:
             shutil.rmtree(fc, ignore_errors=True)
-    return out if os.path.exists(out) else None
+    if not os.path.exists(out):
+        return None
+    try:
+        from PIL import Image
+        im = Image.open(out)
+        scale = MERMAID_SCALE
+        if im.width * im.height > MAX_PIXELS:
+            f = (MAX_PIXELS / (im.width * im.height)) ** 0.5
+            im = im.resize((int(im.width * f), int(im.height * f)), Image.LANCZOS)
+            scale *= f
+        # the dpi records the render scale, so the picture is placed at its natural size
+        im.save(out, dpi=(72 * scale, 72 * scale))
+    except ImportError:
+        pass
+    return out
 
 
 def split_row(line):
@@ -879,7 +926,10 @@ class Writer:
                         path = draw_boxes(path, m.group(3), os.path.join(self.workdir, f"cell{id(par)}.png"))
                     par.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     size = image_size(path)
-                    par.add_run().add_picture(path, width=Cm(min(width_cm - 0.4, size[0] / 60 if size else 99)))
+                    w_cm = min(width_cm - 0.4, size[0] / density(path) / 60 if size else 99)
+                    par.add_run().add_picture(path, width=Cm(w_cm))
+                    if size:
+                        warn_soft(path, size[0], w_cm)
                     continue
                 part = f"[ภาพหน้าจอ: {m.group(1) or os.path.basename(path)}]"
             m = PLACEHOLDER.match(part)
@@ -916,18 +966,24 @@ class Writer:
                f' w:hint="eastAsia"/></w:rPr><w:t>{mark}</w:t></w:r></w:sdtContent></w:sdt>')
         par._p.append(parse_xml(xml))
 
-    def image(self, path, framed=False, px_per_cm=60):
-        """px_per_cm sets the natural size (a diagram rendered at 3x passes 90), so a small dialog or a
-        three-box diagram is not blown up."""
+    def image(self, path, framed=False, points_per_cm=60):
+        """The natural size is points_per_cm screen points (pixels / density) per cm: 60 for a screenshot, 30 for
+        a diagram, so a small dialog or a three-box diagram is not blown up."""
         p = self.doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.keep_with_next = True
         # fit the text area (16.5 x 22 cm) so a tall diagram (an ER chart) stays on one page with its caption
         size = image_size(path)
+        per_cm = points_per_cm * density(path)
         if size and size[1] * 16.5 > size[0] * 22:
-            pic = p.add_run().add_picture(path, height=Cm(min(22, size[1] / px_per_cm)))
+            h_cm = min(22, size[1] / per_cm)
+            pic = p.add_run().add_picture(path, height=Cm(h_cm))
+            w_cm = h_cm * size[0] / size[1]
         else:
-            pic = p.add_run().add_picture(path, width=Cm(min(16.5, size[0] / px_per_cm) if size else 16.5))
+            w_cm = min(16.5, size[0] / per_cm) if size else 16.5
+            pic = p.add_run().add_picture(path, width=Cm(w_cm))
+        if framed and size:
+            warn_soft(path, size[0], w_cm)
         if framed and self.image_border:
             # a thin dark frame, as screenshots in Thai manuals usually have
             ln = OxmlElement("a:ln")
@@ -1016,7 +1072,7 @@ def convert(md_path, out_path, font, size):
                 diagrams += 1
                 png = render_mermaid(code, workdir, diagrams, font)
                 if png:
-                    w.image(png, px_per_cm=90)
+                    w.image(png, points_per_cm=30)
                 else:
                     w.code(code, "(แผนภาพ mermaid ยังไม่ได้แปลงเป็นภาพ: ติดตั้ง Node.js หรือ mermaid-cli แล้วแปลงใหม่)")
             else:

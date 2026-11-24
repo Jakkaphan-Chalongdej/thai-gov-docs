@@ -45,7 +45,7 @@ Propose the outline and get the user's OK before writing:
 
 ## 3. Screenshots
 Follow [references/screenshots.md](references/screenshots.md): use the user's images when they exist, capture
-them from the running system when a browser tool and a test account are available, otherwise leave
+them sharp (2×) from the running system with `scripts/capture.py` when the user gives its URL, otherwise leave
 `[ภาพหน้าจอ: …]` placeholders and hand the user the screenshot list.
 
 ## 4. Write the manual

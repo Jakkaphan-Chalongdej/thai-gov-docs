@@ -30,7 +30,7 @@ are more than about ten cases, so wrong or missing cases are caught early.
 
 ## 3. Screenshots
 Follow [references/screenshots.md](references/screenshots.md): use the user's images when they exist, capture
-them from a running test system when a browser tool and a test account are available, otherwise leave
+them sharp (2×) from a running test system with `scripts/capture.py` when the user gives its URL, otherwise leave
 `[ภาพหน้าจอ: …]` placeholders and hand the user the screenshot list. Each image shows the screen as it must look
 when the case passes.
 
