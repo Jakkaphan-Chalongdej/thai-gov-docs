@@ -367,7 +367,7 @@ def render_mermaid(code, workdir, n, font):
         # npx downloads into the npm cache; a private one avoids a broken ~/.npm
         run_env = dict(run_env, npm_config_cache=os.path.join(workdir, "npm"))
     try:
-        subprocess.run(cmd + ["-i", src, "-o", out, "-c", cfg, "-s", "2", "-b", "white"],
+        subprocess.run(cmd + ["-i", src, "-o", out, "-c", cfg, "-s", "3", "-b", "white"],
                        check=True, capture_output=True, timeout=300, env=run_env)
     except (subprocess.SubprocessError, OSError) as e:
         err = getattr(e, "stderr", b"") or b""
@@ -415,6 +415,16 @@ class Writer:
             style_font(self.doc.styles[f"toc {level}"] if f"toc {level}" in self.doc.styles
                        else self.doc.styles.add_style(f"toc {level}", 1), font, size, level == 1)
             self.doc.styles[f"toc {level}"].paragraph_format.left_indent = Cm(0.5 * (level - 1))
+        # Word otherwise downsamples pictures to 220 ppi when the file is saved or exported, blurring screenshot text
+        settings = self.doc.settings.element
+        keep = OxmlElement("w:doNotAutoCompressPictures")
+        later = [el for el in settings if el.tag in {qn(f"w:{t}") for t in (
+            "forceUpgrade", "captions", "readModeInkLockDown", "smartTagType", "schemaLibrary", "shapeDefaults",
+            "doNotEmbedSmartTags", "decimalSymbol", "listSeparator")}]
+        if later:
+            later[0].addprevious(keep)
+        else:
+            settings.append(keep)
 
     # front pages -----------------------------------------------------------------------------------------
     def logo(self, par, path, max_w, max_h):
@@ -906,16 +916,18 @@ class Writer:
                f' w:hint="eastAsia"/></w:rPr><w:t>{mark}</w:t></w:r></w:sdtContent></w:sdt>')
         par._p.append(parse_xml(xml))
 
-    def image(self, path, framed=False):
+    def image(self, path, framed=False, px_per_cm=60):
+        """px_per_cm sets the natural size (a diagram rendered at 3x passes 90), so a small dialog or a
+        three-box diagram is not blown up."""
         p = self.doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.keep_with_next = True
-        # fit 15 x 20 cm so a tall diagram (an ER chart) stays on one page; a small dialog is not blown up
+        # fit the text area (16.5 x 22 cm) so a tall diagram (an ER chart) stays on one page with its caption
         size = image_size(path)
-        if size and size[1] * 15 > size[0] * 20:
-            pic = p.add_run().add_picture(path, height=Cm(min(20, size[1] / 60)))
+        if size and size[1] * 16.5 > size[0] * 22:
+            pic = p.add_run().add_picture(path, height=Cm(min(22, size[1] / px_per_cm)))
         else:
-            pic = p.add_run().add_picture(path, width=Cm(min(15, size[0] / 60) if size else 15))
+            pic = p.add_run().add_picture(path, width=Cm(min(16.5, size[0] / px_per_cm) if size else 16.5))
         if framed and self.image_border:
             # a thin dark frame, as screenshots in Thai manuals usually have
             ln = OxmlElement("a:ln")
@@ -1004,7 +1016,7 @@ def convert(md_path, out_path, font, size):
                 diagrams += 1
                 png = render_mermaid(code, workdir, diagrams, font)
                 if png:
-                    w.image(png)
+                    w.image(png, px_per_cm=90)
                 else:
                     w.code(code, "(แผนภาพ mermaid ยังไม่ได้แปลงเป็นภาพ: ติดตั้ง Node.js หรือ mermaid-cli แล้วแปลงใหม่)")
             else:
@@ -1096,9 +1108,17 @@ Sub ExportPdf(src As String, dst As String)
   Next k
   SetPageTotals(doc)
   ArabicPageNumbers(doc)
-  Dim out(0) As New com.sun.star.beans.PropertyValue
+  Rem keep pictures as they are: no JPEG re-encoding and no downsampling, so screenshot text stays sharp
+  Dim pdf(1) As New com.sun.star.beans.PropertyValue
+  pdf(0).Name = &quot;UseLosslessCompression&quot;
+  pdf(0).Value = True
+  pdf(1).Name = &quot;ReduceImageResolution&quot;
+  pdf(1).Value = False
+  Dim out(1) As New com.sun.star.beans.PropertyValue
   out(0).Name = &quot;FilterName&quot;
   out(0).Value = &quot;writer_pdf_Export&quot;
+  out(1).Name = &quot;FilterData&quot;
+  out(1).Value = pdf()
   doc.storeToURL(ConvertToURL(dst), out())
   doc.close(True)
   StarDesktop.terminate()

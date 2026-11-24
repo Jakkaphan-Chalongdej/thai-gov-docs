@@ -19,6 +19,10 @@ Only when a browser tool is available in this session and the user gives the URL
   that would, ask the user to do it or leave a placeholder.
 - One capture per test case, the browser window at a steady size (about 1440 × 900) so the screens look alike. Capture
   the page area, not the whole desktop. Hide or blur personal data that is not test data.
+- Save the capture at full resolution and at 2× pixel density (device scale factor 2, as a Retina screen gives),
+  never the scaled-down preview a screenshot tool shows you: a 1440-wide window should be a file about 2880
+  pixels wide. A 1× capture prints soft, because the page shrinks it to 16.5 cm.
+- A test case about one part of a busy screen: add `crop=` around that part (see Boxes) so its text prints larger.
 - When you can read an element's position (a DOM bounding box), note it for the box on that test case.
 
 ## 3. Placeholders
